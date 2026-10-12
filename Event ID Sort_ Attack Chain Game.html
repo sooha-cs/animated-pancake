@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Event ID Sort: attack chain</title>
+<style>
+:root{--bg:#3b2a1d;--wood:#a8713a;--woodd:#6e4521;--ink:#fff7ea;--mut:#d9c3a5;--ok:#7bd88f;--bad:#ff7a6b;
+ box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#2a1d14}}
+:root[data-theme="dark"]{--bg:#2a1d14}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg) radial-gradient(circle at 50% 0,#5a402b,transparent 70%);color:var(--ink);font-family:"Trebuchet MS","Segoe UI",system-ui,sans-serif;min-height:100vh;touch-action:manipulation}
+header{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 14px;flex-wrap:wrap}
+h1{font-size:1.15rem;margin:0;letter-spacing:.2px}
+.stats{font-size:.85rem;color:var(--mut)}
+button{font:inherit;background:var(--wood);color:var(--ink);border:0;border-bottom:3px solid var(--woodd);border-radius:8px;padding:6px 12px;cursor:pointer}
+button:focus-visible,.card:focus-visible,.bucket:focus-visible{outline:3px solid #ffd54a;outline-offset:2px}
+#buckets{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:0 12px;max-width:900px;margin:0 auto}
+@media(max-width:560px){#buckets{grid-template-columns:repeat(2,1fr)}}
+.bucket{background:linear-gradient(#b98048,var(--wood));border:3px solid var(--woodd);border-radius:6px 6px 14px 14px;padding:6px;min-height:170px;display:flex;flex-direction:column;transition:transform .15s}
+.bucket.hot{transform:translateY(-3px);box-shadow:0 0 0 3px #ffd54a}
+.bucket.shake{animation:sh .35s}
+@keyframes sh{25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+.bt{font-weight:700;font-size:.9rem;text-align:center;padding:2px 0 6px;color:#2b1a0c}
+.bt small{display:block;font-weight:400;font-size:.72rem;color:#4a2e14}
+.stack{flex:1;display:flex;flex-direction:column-reverse;gap:3px;justify-content:flex-start}
+.blk{border-radius:5px;padding:3px 7px;font-size:.78rem;color:#1c1209;font-weight:600;border-bottom:2px solid rgba(0,0,0,.25)}
+.blk span{font-weight:400;opacity:.85}
+#pool{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;padding:18px 12px 90px;max-width:900px;margin:0 auto}
+.card{background:#f1e3c8;color:#2b1a0c;font-weight:800;font-size:1rem;padding:9px 13px;border-radius:8px;border-bottom:3px solid #b79b6c;cursor:grab;user-select:none;touch-action:none}
+.card.sel{outline:3px solid #ffd54a}
+.card.ghost{opacity:.3}
+.drag{position:fixed;z-index:50;pointer-events:none;transform:translate(-50%,-50%) rotate(-4deg);box-shadow:0 8px 18px rgba(0,0,0,.45)}
+#toast{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);max-width:92vw;background:#1c1209;border:2px solid var(--mut);padding:10px 14px;border-radius:10px;font-size:.9rem;opacity:0;transition:opacity .2s;pointer-events:none;text-align:center;z-index:60}
+#toast.show{opacity:1}#toast.bad{border-color:var(--bad)}#toast.ok{border-color:var(--ok)}
+#win{position:fixed;inset:0;background:rgba(20,12,6,.88);display:none;align-items:center;justify-content:center;z-index:70;text-align:center;padding:20px}
+#win.show{display:flex}#win div{background:var(--bg);border:3px solid var(--wood);border-radius:14px;padding:22px;max-width:380px}
+.hint{text-align:center;color:var(--mut);font-size:.8rem;padding:0 12px 4px}
+</style>
+</head>
+<body>
+<header><h1>Event ID sort: build the attack chain</h1><div><span class="stats" id="stats"></span> <button id="reset">Shuffle &amp; restart</button></div></header>
+<p class="hint">Drag each event ID into the stage it belongs to (or tap a card, then tap a bucket). Wrong bucket? You only get a hint about what the event describes.</p>
+<div id="buckets"></div>
+<div id="pool"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<div id="win"><div><h2 style="margin-top:0">Chain complete</h2><p id="winmsg"></p><button onclick="start()">Play again</button></div></div>
+<script>
+const B=[
+ ["Initial access","#7fc8f8"],["Execution","#f7a8c4"],["Persistence","#c3a6f5"],
+ ["Privilege escalation","#ffd166"],["Lateral movement","#8fe3b0"],["Defence evasion","#ff9b7a"]];
+const E=[
+ [4625,0,"Logon failed: bad password or unknown user"],[4624,0,"Successful logon (type 3/10 from outside?)"],
+ [4740,0,"Account locked after repeated failures"],[4777,0,"DC failed to validate credentials"],[4772,0,"Kerberos ticket request failed"],
+ [4688,1,"New process created"],[4104,1,"PowerShell script block logged"],[4103,1,"PowerShell module logging"],
+ [1116,1,"Defender detected malware"],[1015,1,"Defender: suspicious behaviour detected"],
+ [4698,2,"Scheduled task created"],[4720,2,"User account created"],[7045,2,"New service installed"],
+ [4697,2,"Service install attempted"],[4702,2,"Scheduled task updated"],
+ [4672,3,"Special privileges assigned to new logon"],[4732,3,"Member added to local security group"],
+ [4728,3,"Member added to global security group"],[4724,3,"Password reset attempted"],[4735,3,"Privileged local group modified"],
+ [4648,4,"Logon using explicit credentials"],[4779,4,"RDP/terminal session disconnected"],
+ [4706,4,"New domain trust created"],[4716,4,"Trusted domain info modified"],[4865,4,"Trusted forest entry added"],
+ [1102,5,"Audit log was cleared"],[4719,5,"System audit policy changed"],[5025,5,"Windows Firewall service stopped"],
+ [4946,5,"Firewall rule added"],[4616,5,"System time changed"],[4781,5,"Account name changed"]];
+let placed,miss,sel=null;
+const $=s=>document.querySelector(s),bk=$("#buckets"),pool=$("#pool"),toast=$("#toast");
+let tt;function say(m,c){toast.textContent=m;toast.className="show "+c;clearTimeout(tt);tt=setTimeout(()=>toast.className="",2600)}
+function stats(){$("#stats").textContent=placed+"/"+E.length+" placed, "+miss+" misses"}
+function start(){
+ placed=0;miss=0;sel=null;$("#win").classList.remove("show");
+ bk.innerHTML="";B.forEach((b,i)=>{const d=document.createElement("div");d.className="bucket";d.dataset.i=i;d.tabIndex=0;
+  d.innerHTML='<div class="bt">'+(i+1)+'. '+b[0]+'</div><div class="stack"></div>';bk.appendChild(d)});
+ pool.innerHTML="";[...E].sort(()=>Math.random()-.5).forEach(e=>{const c=document.createElement("div");c.className="card";
+  c.textContent=e[0];c.tabIndex=0;c.dataset.k=e[0];c.addEventListener("pointerdown",down);
+  c.addEventListener("keydown",k=>{if(k.key==="Enter"||k.key===" "){k.preventDefault();pick(c)}});pool.appendChild(c)});
+ stats()}
+function pick(c){document.querySelectorAll(".card.sel").forEach(x=>x.classList.remove("sel"));if(sel===c){sel=null;return}sel=c;c.classList.add("sel")}
+function drop(c,bEl){
+ const e=E.find(x=>x[0]==c.dataset.k),i=+bEl.dataset.i;
+ if(e[1]===i){const b=document.createElement("div");b.className="blk";b.style.background=B[i][1];
+  b.innerHTML=e[0]+" <span>"+e[2]+"</span>";bEl.querySelector(".stack").appendChild(b);c.remove();placed++;sel=null;
+  say("Yes. "+e[0]+": "+e[2],"ok");stats();if(placed===E.length){$("#winmsg").textContent="All "+E.length+" placed with "+miss+" misses. Now try again from memory, faster.";$("#win").classList.add("show")}}
+ else{miss++;bEl.classList.remove("shake");void bEl.offsetWidth;bEl.classList.add("shake");
+  say("Not here. Hint: "+e[0]+" = "+e[2].toLowerCase(),"bad");stats()}}
+function down(ev){
+ const c=ev.currentTarget,sx=ev.clientX,sy=ev.clientY;let g=null,moved=false;
+ const at=(x,y)=>{const el=document.elementFromPoint(x,y);return el&&el.closest(".bucket")};
+ const mv=m=>{if(!moved&&Math.hypot(m.clientX-sx,m.clientY-sy)<6)return;
+  if(!moved){moved=true;g=c.cloneNode(true);g.className="card drag";document.body.appendChild(g);c.classList.add("ghost")}
+  g.style.left=m.clientX+"px";g.style.top=m.clientY+"px";
+  document.querySelectorAll(".bucket.hot").forEach(x=>x.classList.remove("hot"));const b=at(m.clientX,m.clientY);b&&b.classList.add("hot")};
+ const up=m=>{removeEventListener("pointermove",mv);removeEventListener("pointerup",up);removeEventListener("pointercancel",up);
+  document.querySelectorAll(".bucket.hot").forEach(x=>x.classList.remove("hot"));
+  if(!moved){pick(c);return}
+  g.remove();c.classList.remove("ghost");const b=at(m.clientX,m.clientY);if(b)drop(c,b)};
+ addEventListener("pointermove",mv);addEventListener("pointerup",up);addEventListener("pointercancel",up)}
+bk.addEventListener("click",e=>{const b=e.target.closest(".bucket");if(b&&sel&&document.body.contains(sel))drop(sel,b)});
+bk.addEventListener("keydown",e=>{if((e.key==="Enter"||e.key===" ")&&sel){e.preventDefault();const b=e.target.closest(".bucket");b&&drop(sel,b)}});
+$("#reset").onclick=start;start();
+</script>
+</body>
+</html>
